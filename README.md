@@ -52,7 +52,8 @@ tool arguments, runbook text and model answers stay out of the spans.
 
 Runtime validation checks the response contract and evidence provenance.
 The offline tests check the expected outcome for each fixture and exercise a model
-that returns invented evidence. Real model responses can vary. This PoC covers one
+that returns invented evidence. A local OTLP receiver test checks the export request
+and verifies the trace omits raw log text. Real model responses can vary. This PoC covers one
 Maven failure class and the evidence check does not establish that every claim in
 the diagnosis follows from the log.
 
