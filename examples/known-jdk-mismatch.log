@@ -1,0 +1,3 @@
+[INFO] --- compiler:3.13.0:compile (default-compile) @ demo ---
+[ERROR] Fatal error compiling: error: release version 21 not supported
+[INFO] BUILD FAILURE
