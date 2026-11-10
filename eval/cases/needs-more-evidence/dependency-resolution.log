@@ -1,0 +1,7 @@
+[INFO] -----------------------< com.example:payments >------------------------
+[INFO] Building payments 2.0.0-SNAPSHOT
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] BUILD FAILURE
+[ERROR] Failed to execute goal on project payments: Could not resolve dependencies for project com.example:payments:jar:2.0.0-SNAPSHOT
+[ERROR] dependency: com.example:ledger-client:jar:3.1.0 (compile)
+[ERROR] 	Could not find artifact com.example:ledger-client:jar:3.1.0 in central (https://repo.maven.apache.org/maven2)

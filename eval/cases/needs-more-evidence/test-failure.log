@@ -1,0 +1,7 @@
+[INFO] --- surefire:3.5.2:test (default-test) @ cart ---
+[INFO] Running com.example.cart.CartServiceTest
+[ERROR] Tests run: 5, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 0.412 s <<< FAILURE! -- in com.example.cart.CartServiceTest
+[ERROR] com.example.cart.CartServiceTest.appliesDiscount -- Time elapsed: 0.031 s <<< FAILURE!
+org.opentest4j.AssertionFailedError: expected: <90.00> but was: <100.00>
+[INFO] BUILD FAILURE
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-surefire-plugin:3.5.2:test (default-test) on project cart: There are test failures.
