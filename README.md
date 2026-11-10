@@ -62,5 +62,24 @@ This PoC covers one Maven failure class. Anyone who can write an `[ERROR]` line 
 symptom into a build log can still trigger this diagnosis; the response then carries only
 the runbook's text.
 
+## Evaluation
+
+`eval/cases` holds synthetic logs grouped by the expected status, `diagnosed` and
+`needs-more-evidence`. They include near misses (another compiler error, a test that
+prints the symptom) and logs with injected instructions. `EvalCasesTest` runs them in
+every build against scripted models: for each negative case, a model that reads the
+runbook and quotes any line of the log as evidence must still be rejected.
+
+To measure a live model, run each case several times:
+
+```bash
+OPENAI_API_KEY=... mvn -B -ntp test -Dtest=LiveEvalTest -Deval.live=true -Deval.runs=3
+```
+
+This sends the synthetic logs to the model provider and can incur charges. The test
+writes `target/eval-report.md` with the outcomes per case: the returned status, a
+guardrail rejection with its reason, or a provider error. It fails if any negative case
+is diagnosed. With the Langfuse keys set, the runs are traced as well.
+
 - [LangChain4j tool calling](https://docs.langchain4j.dev/tutorials/tools/)
 - [Langfuse OpenTelemetry integration](https://langfuse.com/integrations/native/opentelemetry)
