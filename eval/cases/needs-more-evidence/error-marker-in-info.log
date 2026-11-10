@@ -1,0 +1,4 @@
+[INFO] --- surefire:3.5.2:test (default-test) @ toolchain-check ---
+[INFO] Sample: [ERROR] error: release version 21 not supported
+[ERROR] Tests run: 1, Failures: 1, Errors: 0, Skipped: 0
+[INFO] BUILD FAILURE
