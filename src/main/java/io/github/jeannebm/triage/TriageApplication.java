@@ -35,6 +35,9 @@ public class TriageApplication {
                 yield OpenAiChatModel.builder()
                         .apiKey(apiKey)
                         .modelName(modelName)
+                        // JSON mode: the provider refuses to return prose or markdown around the
+                        // object, so TriageService.validate() sees the contract, not a wrapper.
+                        .responseFormat("json_object")
                         .timeout(Duration.ofSeconds(15))
                         .maxRetries(0)
                         .maxTokens(450)
