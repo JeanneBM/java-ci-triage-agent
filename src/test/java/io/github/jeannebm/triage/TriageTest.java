@@ -76,27 +76,76 @@ class TriageTest {
 
     @Test
     void rejectsInventedEvidenceAfterTheRunbookWasRead() throws Exception {
-        var model = new ChatModel() {
-            @Override
-            public ChatResponse doChat(ChatRequest request) {
-                if (request.messages().size() == 2) {
-                    return ChatResponse.builder().aiMessage(AiMessage.from(ToolExecutionRequest.builder()
-                            .id("runbook").name(TriageService.TOOL_NAME).arguments("{}").build())).build();
-                }
-                return ChatResponse.builder().aiMessage(AiMessage.from("""
-                        {"status":"DIAGNOSED","diagnosis":"JDK mismatch",
-                         "evidence":"Invented compiler error","nextStep":"Check the JDK"}
-                        """)).build();
-            }
-        };
+        var model = scripted("""
+                {"status":"DIAGNOSED","diagnosis":"JDK mismatch",
+                 "evidence":"Invented compiler error","nextStep":"Check the JDK"}
+                """);
         endpoint(model).perform(post("/triage")
                         .contentType(MediaType.APPLICATION_JSON).content(fixture("known-jdk-mismatch.log")))
                 .andExpect(status().isBadGateway())
                 .andExpect(jsonPath("$.evidence").doesNotExist());
     }
 
+    @Test
+    void acceptsJsonWrappedInMarkdownFence() throws Exception {
+        var model = scripted("""
+                ```json
+                {"status":"DIAGNOSED","diagnosis":"JDK mismatch",
+                 "evidence":"error: release version 21 not supported","nextStep":"Check the JDK"}
+                ```
+                """);
+        endpoint(model).perform(post("/triage")
+                        .contentType(MediaType.APPLICATION_JSON).content(fixture("known-jdk-mismatch.log")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("DIAGNOSED"));
+    }
+
+    @Test
+    void rejectsEvidenceTakenFromANonErrorLine() throws Exception {
+        var model = scripted("""
+                {"status":"DIAGNOSED","diagnosis":"JDK mismatch",
+                 "evidence":"compiler:3.13.0:compile","nextStep":"Check the JDK"}
+                """);
+        endpoint(model).perform(post("/triage")
+                        .contentType(MediaType.APPLICATION_JSON).content(fixture("known-jdk-mismatch.log")))
+                .andExpect(status().isBadGateway());
+    }
+
+    @Test
+    void rejectsTrivialEvidence() throws Exception {
+        var model = scripted("""
+                {"status":"DIAGNOSED","diagnosis":"JDK mismatch",
+                 "evidence":"[ERROR]","nextStep":"Check the JDK"}
+                """);
+        endpoint(model).perform(post("/triage")
+                        .contentType(MediaType.APPLICATION_JSON).content(fixture("known-jdk-mismatch.log")))
+                .andExpect(status().isBadGateway());
+    }
+
+    @Test
+    void stripsOnlyACompleteCodeFence() {
+        assertThat(TriageService.stripCodeFence("```json\n{\"a\":1}\n```")).isEqualTo("{\"a\":1}");
+        assertThat(TriageService.stripCodeFence("```\n{\"a\":1}\n```")).isEqualTo("{\"a\":1}");
+        assertThat(TriageService.stripCodeFence("  {\"a\":1}  ")).isEqualTo("{\"a\":1}");
+        assertThat(TriageService.stripCodeFence("```json {\"a\":1}")).isEqualTo("```json {\"a\":1}");
+    }
+
+    /** Calls the runbook tool first, then returns the given final answer. */
+    private static ChatModel scripted(String finalAnswer) {
+        return new ChatModel() {
+            @Override
+            public ChatResponse doChat(ChatRequest request) {
+                if (request.messages().size() == 2) {
+                    return ChatResponse.builder().aiMessage(AiMessage.from(ToolExecutionRequest.builder()
+                            .id("runbook").name(TriageService.TOOL_NAME).arguments("{}").build())).build();
+                }
+                return ChatResponse.builder().aiMessage(AiMessage.from(finalAnswer)).build();
+            }
+        };
+    }
+
     private MockMvc endpoint(ChatModel model) throws Exception {
-        var service = new TriageService(model, json, provider);
+        var service = new TriageService(model, json, provider, "demo");
         return MockMvcBuilders.standaloneSetup(new TriageController(service)).build();
     }
 
