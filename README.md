@@ -8,6 +8,28 @@ and accepts a diagnosis only when the guide was read and the cited evidence appe
 verbatim on an error line of the log. The response includes a suggested next step for
 a human. The only tool reads a classpath resource.
 
+## Architecture
+
+The Spring Boot service runs on localhost. Demo mode scripts model replies; live mode uses OpenAI through LangChain4j. A diagnosis requires the one allowed runbook lookup and verbatim evidence on an error line. Traces omit raw logs and prompts.
+
+```mermaid
+flowchart TD
+  LOG["Maven log"] --> API["POST /triage: input limits"]
+  subgraph APP["Local Spring Boot application"]
+    API --> SERVICE["TriageService: bounded model loop"]
+    SERVICE --> CHAT["LangChain4j ChatModel"]
+    CHAT -->|"optional single lookupRunbook request"| TOOL["Validate tool name and empty arguments"]
+    TOOL --> BOOK[("Bundled classpath runbook")]
+    BOOK -->|"tool result and second model call"| CHAT
+    CHAT --> VALID["Response schema and exact error-line evidence"]
+    VALID --> RESULT["DIAGNOSED or NEEDS_MORE_EVIDENCE"]
+    SERVICE --> OTEL["OpenTelemetry spans"]
+  end
+  CHAT -->|"demo"| STUB["Scripted model"]
+  CHAT -->|"live"| MODEL["OpenAI API"]
+  OTEL -->|"OTLP/HTTP when configured"| LF["Langfuse"]
+```
+
 ## Why a tool for a constant runbook?
 
 The runbook could be pasted into the prompt. It is exposed as a tool on purpose: the
