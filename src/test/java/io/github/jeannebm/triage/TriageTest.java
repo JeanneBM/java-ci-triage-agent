@@ -21,6 +21,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
@@ -93,6 +94,19 @@ class TriageTest {
                 .containsExactly("model-call", "validate-response", "maven-ci-triage");
     }
 
+    @ParameterizedTest
+    @CsvSource({"demo,span", "live,generation"})
+    void preservesModelObservationTypeForEachMode(String mode, String observationType) throws Exception {
+        var model = replies(List.of(AiMessage.from("{\"status\":\"NEEDS_MORE_EVIDENCE\"}")));
+        var service = new TriageService(model, json, provider, mode);
+        service.triage(JDK_LOG);
+
+        var modelSpan = exporter.getFinishedSpanItems().getFirst();
+        assertThat(modelSpan.getName()).isEqualTo("model-call");
+        assertThat(modelSpan.getAttributes().get(AttributeKey.stringKey("langfuse.observation.type")))
+                .isEqualTo(observationType);
+    }
+
     @Test
     void returnsBadGatewayForInventedEvidenceAfterTheRunbookWasRead() throws Exception {
         var model = replies(List.of(toolCall(TriageService.TOOL_NAME, "{}"), diagnosis("Invented compiler error")));
@@ -115,7 +129,7 @@ class TriageTest {
     @ParameterizedTest(name = "{0}")
     @MethodSource("invalidResponses")
     void rejectsInvalidModelResponses(String scenario, List<AiMessage> replies, String reason) throws Exception {
-        var service = new TriageService(replies(replies), json, provider);
+        var service = new TriageService(replies(replies), json, provider, "demo");
         assertThatThrownBy(() -> service.triage(JDK_LOG))
                 .isInstanceOf(TriageService.InvalidResponse.class)
                 .hasMessage(reason);
@@ -156,14 +170,14 @@ class TriageTest {
                 throw new IllegalStateException("connect timed out");
             }
         };
-        var service = new TriageService(failing, json, provider);
+        var service = new TriageService(failing, json, provider, "demo");
         assertThatThrownBy(() -> service.triage(JDK_LOG))
                 .isInstanceOf(TriageService.InvalidResponse.class)
                 .hasMessage(TriageService.MODEL_REQUEST_FAILED);
     }
 
     private MockMvc endpoint(ChatModel model) throws Exception {
-        var service = new TriageService(model, json, provider);
+        var service = new TriageService(model, json, provider, "demo");
         return MockMvcBuilders.standaloneSetup(new TriageController(service)).build();
     }
 

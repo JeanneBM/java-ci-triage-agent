@@ -44,7 +44,7 @@ class EvalCasesTest {
         var quotes = Stream.concat(log.lines().filter(line -> !line.isBlank()),
                 Stream.of("BUILD FAILURE", "release version 21 not supported")).toList();
         for (String quote : quotes) {
-            var service = new TriageService(alwaysDiagnoses(quote), JSON, TRACING);
+            var service = new TriageService(alwaysDiagnoses(quote), JSON, TRACING, "demo");
             assertThat(diagnoses(service, log)).as("diagnosis quoting: %s", quote).isFalse();
         }
     }
@@ -56,7 +56,7 @@ class EvalCasesTest {
         String errorLine = log.lines()
                 .filter(line -> line.contains("[ERROR]") && line.contains("not supported"))
                 .findFirst().orElseThrow().strip();
-        var result = new TriageService(alwaysDiagnoses(errorLine), JSON, TRACING).triage(log);
+        var result = new TriageService(alwaysDiagnoses(errorLine), JSON, TRACING, "demo").triage(log);
         assertThat(result.status()).isEqualTo(TriageService.Status.DIAGNOSED);
         assertThat(result.nextStep()).isEqualTo(Runbook.mavenJdkRelease().nextStep());
     }

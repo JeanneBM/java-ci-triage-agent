@@ -43,7 +43,7 @@ class LiveEvalTest {
 
         var runs = new ArrayList<Run>();
         try (tracing) {
-            var service = new TriageService(model, new ObjectMapper(), tracing);
+            var service = new TriageService(model, new ObjectMapper(), tracing, "live");
             for (var entry : cases.entrySet()) {
                 for (Path file : entry.getValue()) {
                     String log = Files.readString(file);

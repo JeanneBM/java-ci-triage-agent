@@ -3,6 +3,7 @@ package io.github.jeannebm.triage;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.regex.Pattern;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -23,10 +24,15 @@ import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.api.trace.Tracer;
 import io.opentelemetry.sdk.trace.SdkTracerProvider;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 @Service
 final class TriageService {
+
+    private static final Logger LOG = LoggerFactory.getLogger(TriageService.class);
 
     static final String TOOL_NAME = "lookupRunbook";
     static final String MORE_EVIDENCE_STEP = "Provide the first compiler error and the output of mvn -version.";
@@ -47,18 +53,26 @@ final class TriageService {
             To diagnose, return {"status":"DIAGNOSED","evidence":"..."}, where evidence is an
             exact substring of one [ERROR] line of the log that shows the symptom from the guide.
             Otherwise return {"status":"NEEDS_MORE_EVIDENCE"}.
+            Never claim to have run commands or changed the build.
             """);
 
     private final ChatModel model;
     private final ObjectMapper json;
     private final Tracer tracer;
     private final Runbook runbook;
+    private final String modelObservationType;
 
-    TriageService(ChatModel model, ObjectMapper json, SdkTracerProvider provider) throws IOException {
+    /**
+     * @param mode {@code demo} or {@code live}. Demo calls are scripted, so Langfuse
+     *             records them as plain spans instead of billable generations.
+     */
+    TriageService(ChatModel model, ObjectMapper json, SdkTracerProvider provider,
+                  @Value("${triage.mode}") String mode) throws IOException {
         this.model = model;
         this.json = json;
         this.tracer = provider.get("java-ci-triage-agent");
         this.runbook = Runbook.mavenJdkRelease();
+        this.modelObservationType = "demo".equals(mode) ? "span" : "generation";
     }
 
     Result triage(String log) {
@@ -81,20 +95,23 @@ final class TriageService {
             Span check = span("validate-response", "guardrail");
             try {
                 var draft = validate(answer.text(), log, usedRunbook);
-                check.setAttribute("langfuse.observation.output", "{\"validation\":\"passed\"}");
-                trace.setAttribute("langfuse.observation.output",
-                        "{\"status\":\"" + draft.status() + "\"}");
+                check.setAttribute("langfuse.observation.output", jsonAttribute("validation", "passed"));
+                trace.setAttribute("langfuse.observation.output", jsonAttribute("status", draft.status().name()));
                 return result(draft, usedRunbook, trace.getSpanContext().getTraceId());
             } catch (InvalidResponse e) {
                 check.setStatus(StatusCode.ERROR, "Invalid model response");
+                check.setAttribute("langfuse.observation.output", jsonAttribute("validation", e.getMessage()));
                 throw e;
             } finally {
                 check.end();
             }
         } catch (InvalidResponse e) {
+            // The reason is a fixed string from this class; it never contains log or model text.
+            LOG.warn("Rejected model response, traceId={}: {}", trace.getSpanContext().getTraceId(), e.getMessage());
             trace.setStatus(StatusCode.ERROR, "Invalid model response");
             throw e;
         } catch (RuntimeException e) {
+            LOG.error("Model request failed, traceId={}", trace.getSpanContext().getTraceId());
             trace.setStatus(StatusCode.ERROR, MODEL_REQUEST_FAILED);
             throw new InvalidResponse(MODEL_REQUEST_FAILED);
         } finally {
@@ -103,7 +120,7 @@ final class TriageService {
     }
 
     private ChatResponse chat(ChatRequest request) {
-        Span generation = span("model-call", model instanceof DemoChatModel ? "span" : "generation");
+        Span generation = span("model-call", modelObservationType);
         try {
             var response = model.chat(request);
             if (response.metadata() != null && response.metadata().modelName() != null) {
@@ -141,7 +158,7 @@ final class TriageService {
     private String lookupRunbook() {
         Span tool = span(TOOL_NAME, "tool");
         try {
-            tool.setAttribute("langfuse.observation.output", "{\"runbookId\":\"" + runbook.id() + "\"}");
+            tool.setAttribute("langfuse.observation.output", jsonAttribute("runbookId", runbook.id()));
             return runbook.guide();
         } finally {
             tool.end();
@@ -193,6 +210,14 @@ final class TriageService {
 
     private static boolean quotesAnErrorLine(String log, String evidence) {
         return log.lines().anyMatch(line -> ERROR_LINE.matcher(line).find() && line.contains(evidence));
+    }
+
+    private String jsonAttribute(String key, String value) {
+        try {
+            return json.writeValueAsString(Map.of(key, value));
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Cannot serialize span attribute", e);
+        }
     }
 
     private Span span(String name, String type) {
