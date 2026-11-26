@@ -36,8 +36,12 @@ class LiveEvalTest {
         }
 
         var app = new TriageApplication();
-        String modelName = env("OPENAI_MODEL", "gpt-4.1-mini");
-        var model = app.chatModel("live", env("OPENAI_API_KEY", ""), modelName);
+        String provider = env("TRIAGE_PROVIDER", "openai");
+        String openAiModel = env("OPENAI_MODEL", "gpt-4.1-mini");
+        String deployment = env("AZURE_OPENAI_DEPLOYMENT", "");
+        String modelName = "azure".equals(provider) ? deployment : openAiModel;
+        var model = app.chatModel("live", provider, env("OPENAI_API_KEY", ""), openAiModel,
+                env("AZURE_OPENAI_ENDPOINT", ""), env("AZURE_OPENAI_API_KEY", ""), deployment);
         var tracing = app.tracerProvider(env("LANGFUSE_HOST", "https://cloud.langfuse.com"),
                 env("LANGFUSE_PUBLIC_KEY", ""), env("LANGFUSE_SECRET_KEY", ""));
 
@@ -54,7 +58,7 @@ class LiveEvalTest {
             }
         }
 
-        String report = report(modelName, repetitions, runs);
+        String report = report(provider, modelName, repetitions, runs);
         Files.createDirectories(Path.of("target"));
         Files.writeString(Path.of("target", "eval-report.md"), report);
         System.out.println(report);
@@ -84,9 +88,9 @@ class LiveEvalTest {
         }
     }
 
-    private static String report(String modelName, int repetitions, List<Run> runs) {
-        var out = new StringBuilder("# Live evaluation\n\nModel: `%s`. Runs per case: %d.\n\n"
-                .formatted(modelName, repetitions));
+    private static String report(String provider, String modelName, int repetitions, List<Run> runs) {
+        var out = new StringBuilder("# Live evaluation\n\nProvider: `%s`. Model/deployment: `%s`. Runs per case: %d.\n\n"
+                .formatted(provider, modelName, repetitions));
         out.append("| Case | Expected | Correct | Outcomes |\n| --- | --- | --- | --- |\n");
         runs.stream()
                 .collect(Collectors.groupingBy(Run::file, LinkedHashMap::new, Collectors.toList()))

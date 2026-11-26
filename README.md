@@ -14,7 +14,7 @@ classpath resource.
 
 ## Architecture
 
-The Spring Boot service runs on localhost. Demo mode scripts model replies; live mode uses OpenAI through LangChain4j. A diagnosis requires the one allowed runbook lookup and verbatim evidence on an error line. Traces omit raw logs and prompts.
+The Spring Boot service runs on localhost. Demo mode scripts model replies; live mode uses OpenAI or Azure OpenAI through LangChain4j. A diagnosis requires the one allowed runbook lookup and verbatim evidence on an error line. Traces omit raw logs and prompts.
 
 ```mermaid
 flowchart TD
@@ -30,7 +30,7 @@ flowchart TD
     SERVICE --> OTEL["OpenTelemetry spans"]
   end
   CHAT -->|"demo"| STUB["Scripted model"]
-  CHAT -->|"live"| MODEL["OpenAI API"]
+  CHAT -->|"live"| MODEL["OpenAI or Azure OpenAI API"]
   OTEL -->|"OTLP/HTTP when configured"| LF["Langfuse"]
 ```
 
@@ -105,10 +105,47 @@ Any violation is a 502 with a fixed, non-sensitive reason in the log and in the
 
 ## Live model and Langfuse
 
-Set `TRIAGE_MODE=live` and provide `OPENAI_API_KEY` through your environment.
-`OPENAI_MODEL` defaults to `gpt-4.1-mini` and runs in JSON mode. This mode sends the
-submitted log to the model provider and can incur charges. Use the synthetic fixtures
-for the demo.
+Set `TRIAGE_MODE=live` and choose a provider with `TRIAGE_PROVIDER`:
+
+| Provider | Required environment | Model selection |
+| --- | --- | --- |
+| `openai` (default) | `OPENAI_API_KEY` | `OPENAI_MODEL`, default `gpt-4.1-mini` |
+| `azure` | `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_DEPLOYMENT` | Your Azure deployment name, not necessarily the underlying model ID |
+
+Both providers use JSON mode, a 450-token output limit per call, a 15-second request
+timeout and no automatic retries. Live mode sends the submitted log to the selected
+provider and can incur charges. Use the synthetic fixtures for validation. An invalid
+Azure configuration fails locally; it never falls back to the public OpenAI API.
+
+### Use an existing Azure OpenAI deployment
+
+The app stays on your computer. No App Service, AKS or other Azure infrastructure is
+created. Set the following in Bash or Git Bash, replacing the endpoint and deployment
+with your existing resource values:
+
+```bash
+export TRIAGE_MODE=live
+export TRIAGE_PROVIDER=azure
+export AZURE_OPENAI_ENDPOINT="https://YOUR-RESOURCE.openai.azure.com"
+export AZURE_OPENAI_DEPLOYMENT="YOUR-DEPLOYMENT"
+read -rsp "Azure OpenAI API key: " AZURE_OPENAI_API_KEY
+echo
+export AZURE_OPENAI_API_KEY
+mvn spring-boot:run
+```
+
+The key input is hidden and its value is not included in shell history. Keep that
+terminal open for the application. The endpoint may be a resource URL or its
+`/openai/v1/` base URL. Deployment-specific URLs and query strings are rejected.
+
+This integration uses Azure's [v1 Chat Completions API](https://learn.microsoft.com/azure/ai-foundry/openai/api-version-lifecycle),
+the deployment name in `model`, and the `api-key` header. It needs no `api-version`
+parameter or additional Azure SDK dependency. Use a deployment supporting chat
+completions, tool calling, JSON mode and `max_tokens`, such as GPT-4.1 mini.
+API key authentication must be enabled on the resource; Entra ID authentication is
+not implemented in this initial integration.
+
+### Optional Langfuse tracing
 
 For either mode, set `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` for your
 project. `LANGFUSE_HOST` defaults to `https://cloud.langfuse.com`. Restart the
@@ -145,10 +182,13 @@ runbook and quotes any line of the log as evidence must still be rejected.
 To measure a live model, run each case several times:
 
 ```bash
-OPENAI_API_KEY=... mvn -B -ntp test -Dtest=LiveEvalTest -Deval.live=true -Deval.runs=3
+mvn -B -ntp test -Dtest=LiveEvalTest -Deval.live=true -Deval.runs=3
 ```
 
-This sends the synthetic logs to the model provider and can incur charges. The test
+The evaluation uses the same provider environment as the application, including
+`TRIAGE_PROVIDER=azure` and the `AZURE_OPENAI_*` values for Azure. Its report records
+the provider and model or deployment name. This sends the synthetic logs to the
+selected provider and can incur charges. The test
 writes `target/eval-report.md` with the outcomes per case: the returned status, a
 guardrail rejection with its reason, or a provider error. Set `eval.runs` to a positive
 integer. The test fails on any provider error, any diagnosis of a negative case, or
