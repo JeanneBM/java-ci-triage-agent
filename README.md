@@ -3,10 +3,14 @@
 Maven build failure triage with Spring Boot, LangChain4j and Langfuse.
 
 `POST /triage` accepts a Maven build log. The model can call `lookupRunbook` once to
-read a bundled troubleshooting guide. The Java application validates the tool call
-and accepts a diagnosis only when the guide was read and the cited evidence appears
-verbatim on an error line of the log. The response includes a suggested next step for
-a human. The only tool reads a classpath resource.
+read a bundled troubleshooting guide, then returns only a status and, for a diagnosis,
+a quote from the log. The Java application validates the tool call and accepts a
+diagnosis only when the guide was read and the quote comes from a line that starts
+with `[ERROR]` (after an optional GitHub Actions timestamp) and shows the symptom
+the runbook describes. The diagnosis and the suggested
+next step for a human come from the runbook, not from the model, so text in a build
+log cannot change what the service tells a person to do. The only tool reads a
+classpath resource.
 
 ## Architecture
 
@@ -64,17 +68,17 @@ done
 
 | Fixture | Expected status | Expected behavior |
 | --- | --- | --- |
-| `known-jdk-mismatch.log` | `DIAGNOSED` | Reads `MAVEN-JDK-001`, quotes the compiler error and suggests checking the CI JDK and Maven toolchain. |
-| `insufficient-evidence.log` | `NEEDS_MORE_EVIDENCE` | Asks for the first compiler error and `mvn -version`. The scripted model skips the runbook. |
+| `known-jdk-mismatch.log` | `DIAGNOSED` | Reads `MAVEN-JDK-001`, quotes the compiler error and returns the runbook's next step: check the CI JDK and Maven toolchain. |
+| `insufficient-evidence.log` | `NEEDS_MORE_EVIDENCE` | Returns a fixed request for the first compiler error and `mvn -version`. The scripted model skips the runbook. |
 
 A diagnosed response looks like this:
 
 ```json
 {
   "status": "DIAGNOSED",
-  "diagnosis": "The compiler selected by Maven does not support Java release 21.",
+  "diagnosis": "The compiler selected by Maven does not support the requested Java release.",
   "evidence": "error: release version 21 not supported",
-  "nextStep": "Check mvn -version and the Maven toolchain on CI. Select a JDK that supports release 21, then rerun.",
+  "nextStep": "Check mvn -version on the CI runner and the JDK selected by any Maven toolchain. Use a JDK that supports the requested release, then rerun the build.",
   "runbookId": "MAVEN-JDK-001",
   "traceId": "3f1c…"
 }
@@ -88,13 +92,13 @@ The service binds to localhost and accepts logs up to 12,000 characters.
 
 The model output is a contract, not an answer. Before anything is returned:
 
-- The response must be a single JSON object with exactly the documented fields.
-  A markdown code fence around the object is tolerated; anything else is rejected.
-- `DIAGNOSED` requires a prior runbook lookup, a non-empty diagnosis and evidence.
-- Evidence must be at least 8 characters, a single line, and appear verbatim on a log
-  line that mentions an error. `[ERROR]` alone, or a fragment of an `[INFO]` line,
-  is rejected.
-- `NEEDS_MORE_EVIDENCE` may not carry a diagnosis or evidence.
+- The model may return only `status` and `evidence` in a single JSON object.
+  Unknown fields, Markdown fences and trailing content are rejected.
+- `DIAGNOSED` requires a prior runbook lookup and evidence showing the runbook symptom.
+- Evidence must appear verbatim on a line starting with `[ERROR]`, optionally after
+  a GitHub Actions timestamp. An embedded `[ERROR]` marker in an `[INFO]` line is rejected.
+- The diagnosis and next step come from the bundled runbook, not model-written advice.
+- `NEEDS_MORE_EVIDENCE` may not carry evidence; its next step is fixed by the service.
 
 Any violation is a 502 with a fixed, non-sensitive reason in the log and in the
 `validate-response` span.
@@ -117,13 +121,39 @@ application log.
 
 ## Scope and limits
 
-The offline tests check the expected outcome for each fixture and exercise models
-that return invented evidence, evidence from a non-error line, trivial evidence and
-fenced JSON. A local OTLP receiver test checks the export request and verifies the
-trace omits raw log text. Real model responses can vary and the live path is not
-covered by automated tests. This PoC covers one Maven failure class, and the evidence
-check anchors the diagnosis to the log without proving that every claim in the
-diagnosis follows from it.
+Runtime validation checks the response contract and evidence provenance. The model may
+return only `status` and `evidence`; any other field, Markdown around the JSON, or an
+abstention that cites evidence is rejected. The offline tests check the expected outcome
+for each fixture and exercise invalid tool calls, schemas and evidence. A local OTLP receiver test checks the
+export request and verifies the trace omits raw log text. Real model responses can vary.
+This PoC covers one Maven failure class. A fabricated error line can still trigger
+a diagnosis. The diagnosis and next step remain fixed runbook text, and the evidence
+field quotes untrusted log data.
+
+[Local validation, 26 November 2026](evidence/validation-2026-11-26.md): 28 tests
+passed, one live evaluation skipped, and both fixture endpoints passed a demo HTTP
+smoke test. Cloud Langfuse ingestion and real model quality remain unverified.
+
+## Evaluation
+
+`eval/cases` holds synthetic logs grouped by the expected status, `diagnosed` and
+`needs-more-evidence`. They include near misses (another compiler error, a test that
+prints the symptom) and logs with injected instructions. `EvalCasesTest` runs them in
+every build against scripted models: for each negative case, a model that reads the
+runbook and quotes any line of the log as evidence must still be rejected.
+
+To measure a live model, run each case several times:
+
+```bash
+OPENAI_API_KEY=... mvn -B -ntp test -Dtest=LiveEvalTest -Deval.live=true -Deval.runs=3
+```
+
+This sends the synthetic logs to the model provider and can incur charges. The test
+writes `target/eval-report.md` with the outcomes per case: the returned status, a
+guardrail rejection with its reason, or a provider error. Set `eval.runs` to a positive
+integer. The test fails on any provider error, any diagnosis of a negative case, or
+any case without at least one correct response. With the Langfuse keys set, the runs
+are traced as well.
 
 - [LangChain4j tool calling](https://docs.langchain4j.dev/tutorials/tools/)
 - [Langfuse OpenTelemetry integration](https://langfuse.com/integrations/native/opentelemetry)

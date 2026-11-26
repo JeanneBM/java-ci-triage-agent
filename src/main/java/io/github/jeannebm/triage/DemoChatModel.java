@@ -20,12 +20,7 @@ final class DemoChatModel implements ChatModel {
         var last = messages.getLast();
         if (last instanceof ToolExecutionResultMessage) {
             return response(AiMessage.from("""
-                    {
-                      "status":"DIAGNOSED",
-                      "diagnosis":"The compiler selected by Maven does not support Java release 21.",
-                      "evidence":"error: release version 21 not supported",
-                      "nextStep":"Check mvn -version and the Maven toolchain on CI. Select a JDK that supports release 21, then rerun."
-                    }
+                    {"status":"DIAGNOSED","evidence":"error: release version 21 not supported"}
                     """));
         }
         if (last instanceof UserMessage user && user.singleText().contains(ERROR)) {
@@ -36,10 +31,7 @@ final class DemoChatModel implements ChatModel {
                     .build())));
         }
         return response(AiMessage.from("""
-                {
-                  "status":"NEEDS_MORE_EVIDENCE",
-                  "nextStep":"Provide the first compiler error and the output of mvn -version."
-                }
+                {"status":"NEEDS_MORE_EVIDENCE"}
                 """));
     }
 

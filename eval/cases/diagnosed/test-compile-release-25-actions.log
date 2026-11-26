@@ -1,0 +1,7 @@
+2026-11-10T13:02:10.8812044Z [INFO] --- compiler:3.14.0:compile (default-compile) @ billing ---
+2026-11-10T13:02:10.8820315Z [INFO] Nothing to compile - all classes are up to date.
+2026-11-10T13:02:11.4821930Z [INFO] --- compiler:3.14.0:testCompile (default-testCompile) @ billing ---
+2026-11-10T13:02:11.4900122Z [INFO] Compiling 18 source files with javac [debug release 25] to target/test-classes
+2026-11-10T13:02:11.9931455Z [INFO] BUILD FAILURE
+2026-11-10T13:02:11.9952101Z [ERROR] Failed to execute goal org.apache.maven.plugins:maven-compiler-plugin:3.14.0:testCompile (default-testCompile) on project billing: Fatal error compiling: error: release version 25 not supported -> [Help 1]
+2026-11-10T13:02:11.9960548Z Error: Process completed with exit code 1.

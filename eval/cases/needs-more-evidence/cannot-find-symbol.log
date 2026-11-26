@@ -1,0 +1,11 @@
+[INFO] --- compiler:3.13.0:compile (default-compile) @ catalog ---
+[INFO] Compiling 12 source files with javac [debug release 21] to target/classes
+[INFO] -------------------------------------------------------------
+[ERROR] COMPILATION ERROR :
+[INFO] -------------------------------------------------------------
+[ERROR] /home/runner/work/catalog/src/main/java/com/example/catalog/PriceService.java:[27,16] cannot find symbol
+  symbol:   class Money
+  location: class com.example.catalog.PriceService
+[INFO] 1 error
+[INFO] BUILD FAILURE
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-compiler-plugin:3.13.0:compile (default-compile) on project catalog: Compilation failure
